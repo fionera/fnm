@@ -28,6 +28,7 @@ log = "0.4.14"
 env_logger = "0.8.3"
 atty = "0.2.14"
 encoding_rs_io = "0.1.7"
+os_type = "2.3"
 
 [dev-dependencies]
 pretty_assertions = "0.7.2"

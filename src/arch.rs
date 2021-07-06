@@ -11,6 +11,20 @@ pub enum Arch {
     S390x,
 }
 
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum LibC {
+    Musl,
+    Glibc,
+}
+
+pub trait DownloadPath {
+   fn download_path(&self) -> String;
+}
+
+pub trait InstallDir {
+    fn install_dir(&self) -> String;
+}
+
 #[cfg(unix)]
 /// handle common case: Apple Silicon / Node < 16
 pub fn get_safe_arch<'a>(arch: &'a Arch, version: &Version) -> &'a Arch {
@@ -28,11 +42,29 @@ pub fn get_safe_arch<'a>(arch: &'a Arch, _version: &Version) -> &'a Arch {
     return &arch;
 }
 
+impl DownloadPath for LibC {
+    fn download_path(&self) -> String {
+        match self {
+            LibC::Musl => String::from("-musl"),
+            LibC::Glibc => String::from(""),
+        }
+    }
+}
+
 impl Default for Arch {
     fn default() -> Arch {
         match crate::system_info::platform_arch().parse() {
             Ok(arch) => arch,
             Err(e) => panic!("{}", e.details),
+        }
+    }
+}
+
+impl Default for LibC {
+    fn default() -> LibC {
+        match os_type::current_platform().os_type {
+            os_type::OSType::Alpine => LibC::Musl,
+            _ => LibC::Glibc,
         }
     }
 }
@@ -53,6 +85,18 @@ impl std::str::FromStr for Arch {
     }
 }
 
+impl std::str::FromStr for LibC {
+    type Err = LibCError;
+    fn from_str(s: &str) -> Result<LibC, Self::Err> {
+        match s {
+            "musl" => Ok(LibC::Musl),
+            "glibc" => Ok(LibC::Glibc),
+            unknown => Err(LibCError::new(&format!("Unknown LibC: {}", unknown))),
+        }
+    }
+}
+
+
 impl std::fmt::Display for Arch {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let arch_str = match self {
@@ -66,6 +110,17 @@ impl std::fmt::Display for Arch {
         };
 
         write!(f, "{}", arch_str)
+    }
+}
+
+impl std::fmt::Display for LibC {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let libc_str = match self {
+            LibC::Musl => String::from("musl"),
+            LibC::Glibc => String::from("glibc"),
+        };
+
+        write!(f, "{}", libc_str)
     }
 }
 
@@ -89,6 +144,31 @@ impl std::fmt::Display for ArchError {
 }
 
 impl std::error::Error for ArchError {
+    fn description(&self) -> &str {
+        &self.details
+    }
+}
+
+#[derive(Debug)]
+pub struct LibCError {
+    details: String,
+}
+
+impl LibCError {
+    fn new(msg: &str) -> LibCError {
+        LibCError {
+            details: msg.to_string(),
+        }
+    }
+}
+
+impl std::fmt::Display for LibCError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.details)
+    }
+}
+
+impl std::error::Error for LibCError {
     fn description(&self) -> &str {
         &self.details
     }

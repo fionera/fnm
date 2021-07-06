@@ -1,5 +1,5 @@
 use crate::alias::create_alias;
-use crate::arch::get_safe_arch;
+use crate::arch::{get_safe_arch};
 use crate::config::FnmConfig;
 use crate::downloader::{install_node_dist, Error as DownloaderError};
 use crate::lts::LtsType;
@@ -96,13 +96,14 @@ impl super::command::Command for Install {
         let safe_arch = get_safe_arch(&config.arch, &version);
 
         let version_str = format!("Node {}", &version);
-        outln!(config#Info, "Installing {} ({})", version_str.cyan(), safe_arch.to_string());
+        outln!(config#Info, "Installing {} ({}-{})", version_str.cyan(), safe_arch.to_string(), &config.libc.to_string());
 
         match install_node_dist(
             &version,
             &config.node_dist_mirror,
             config.installations_dir(),
             safe_arch,
+            &config.libc,
         ) {
             Err(err @ DownloaderError::VersionAlreadyInstalled { .. }) => {
                 outln!(config#Error, "{} {}", "warning:".bold().yellow(), err);

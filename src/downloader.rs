@@ -1,13 +1,15 @@
-use crate::arch::Arch;
+use std::path::Path;
+use std::path::PathBuf;
+
+use log::debug;
+use reqwest::Url;
+use snafu::{ensure, OptionExt, ResultExt, Snafu};
+
+use crate::arch::{Arch, LibC, DownloadPath};
 use crate::archive;
 use crate::archive::{Error as ExtractError, Extract};
 use crate::directory_portal::DirectoryPortal;
 use crate::version::Version;
-use log::debug;
-use reqwest::Url;
-use snafu::{ensure, OptionExt, ResultExt, Snafu};
-use std::path::Path;
-use std::path::PathBuf;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -24,9 +26,9 @@ pub enum Error {
     #[snafu(display("The downloaded archive is empty"))]
     TarIsEmpty,
     #[snafu(display(
-        "{} for {} not found upstream.\nYou can `fnm ls-remote` to see available versions or try a different `--arch`.",
-        version,
-        arch
+    "{} for {} not found upstream.\nYou can `fnm ls-remote` to see available versions or try a different `--arch`.",
+    version,
+    arch
     ))]
     VersionNotFound {
         version: Version,
@@ -39,17 +41,18 @@ pub enum Error {
 }
 
 #[cfg(unix)]
-fn filename_for_version(version: &Version, arch: &Arch) -> String {
+fn filename_for_version(version: &Version, arch: &Arch, libc: &LibC) -> String {
     format!(
-        "node-{node_ver}-{platform}-{arch}.tar.xz",
+        "node-{node_ver}-{platform}-{arch}{libc}.tar.xz",
         node_ver = &version,
         platform = crate::system_info::platform_name(),
         arch = arch,
+        libc = libc.download_path(),
     )
 }
 
 #[cfg(windows)]
-fn filename_for_version(version: &Version, arch: &Arch) -> String {
+fn filename_for_version(version: &Version, arch: &Arch, _libc: &LibC) -> String {
     format!(
         "node-{node_ver}-win-{arch}.zip",
         node_ver = &version,
@@ -57,14 +60,14 @@ fn filename_for_version(version: &Version, arch: &Arch) -> String {
     )
 }
 
-fn download_url(base_url: &Url, version: &Version, arch: &Arch) -> Url {
+fn download_url(base_url: &Url, version: &Version, arch: &Arch, libc: &LibC) -> Url {
     Url::parse(&format!(
         "{}/{}/{}",
         base_url.as_str().trim_end_matches('/'),
         version,
-        filename_for_version(version, arch)
+        filename_for_version(version, arch, libc)
     ))
-    .unwrap()
+        .unwrap()
 }
 
 pub fn extract_archive_into<P: AsRef<Path>>(
@@ -72,9 +75,9 @@ pub fn extract_archive_into<P: AsRef<Path>>(
     response: reqwest::blocking::Response,
 ) -> Result<(), Error> {
     #[cfg(unix)]
-    let extractor = archive::TarXz::new(response);
+        let extractor = archive::TarXz::new(response);
     #[cfg(windows)]
-    let extractor = archive::Zip::new(response);
+        let extractor = archive::Zip::new(response);
     extractor.extract_into(path).context(CantExtractFile)?;
     Ok(())
 }
@@ -85,6 +88,7 @@ pub fn install_node_dist<P: AsRef<Path>>(
     node_dist_mirror: &Url,
     installations_dir: P,
     arch: &Arch,
+    libc: &LibC,
 ) -> Result<(), Error> {
     let installation_dir = PathBuf::from(installations_dir.as_ref()).join(version.v_str());
 
@@ -102,7 +106,7 @@ pub fn install_node_dist<P: AsRef<Path>>(
 
     let portal = DirectoryPortal::new_in(&temp_installations_dir, installation_dir);
 
-    let url = download_url(node_dist_mirror, version, arch);
+    let url = download_url(node_dist_mirror, version, arch, libc);
     debug!("Going to call for {}", &url);
     let response = reqwest::blocking::get(url).context(HttpError)?;
 
@@ -180,7 +184,8 @@ mod tests {
         let version = Version::parse("12.0.0").unwrap();
         let arch = Arch::X64;
         let node_dist_mirror = Url::parse("https://nodejs.org/dist/").unwrap();
-        install_node_dist(&version, &node_dist_mirror, &path, &arch)
+        let libc = LibC::GlibC;
+        install_node_dist(&version, &node_dist_mirror, &path, &arch, &libc)
             .expect("Can't install Node 12");
 
         let mut location_path = path.join(version.v_str()).join("installation");
